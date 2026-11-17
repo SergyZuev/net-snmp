@@ -98,22 +98,29 @@ if ($h.Contains($oldMacro)) {
     throw "2.1 Cannot find NETSNMP_REQUIRE_SEMICOLON macro line"
 }
 
-# 2.2 AES CFB128 conditional (flexible whitespace/backslash matching)
-$aesPattern = '(?m)^#if\s+\(defined\(NETSNMP_USE_OPENSSL\)\s*&&\s*defined\(HAVE_OPENSSL_AES_H\)\s*&&\s*defined\(HAVE_AES_CFB128_ENCRYPT\)\)\s*\|\|\s*defined\(NETSNMP_USE_INTERNAL_CRYPTO\)'
-$aesReplacement = @"
+# 2.2 AES CFB128 conditional — handle both upstream-style and hand-modified inner pattern
+# Pattern A: full upstream condition with NETSNMP_USE_OPENSSL + INTERNAL_CRYPTO alternative
+$aesPatternA = '(?m)^#if\s+\(defined\(NETSNMP_USE_OPENSSL\)\s*&&\s*defined\(HAVE_OPENSSL_AES_H\)\s*&&\s*defined\(HAVE_AES_CFB128_ENCRYPT\)\)\s*\|\|\s*defined\(NETSNMP_USE_INTERNAL_CRYPTO\)'
+$aesReplacementA = @"
 #if (defined(NETSNMP_USE_OPENSSL) &&            \
      defined(HAVE_OPENSSL_AES_H) &&             \
      defined(HAVE_AES_CFB128_ENCRYPT) &&        \
      defined(HAVE_EVP_AES_128_CFB)) ||          \
     defined(NETSNMP_USE_INTERNAL_CRYPTO)
 "@.Replace("`r`n","`n").Replace("`n",$nl)
-if ($h -match $aesPattern) {
-    $h = [regex]::Replace($h, $aesPattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $aesReplacement })
-    $editCount++; Write-Ok "2.2 AES CFB128 conditional updated"
+# Pattern B: simplified inner condition (inside outer #ifdef NETSNMP_USE_OPENSSL), flexible spacing
+$aesPatternB = '(?m)^#if\s+defined\(HAVE_OPENSSL_AES_H\)\s*&&\s*defined\(HAVE_AES_CFB128_ENCRYPT\)\s*$'
+$aesReplacementB = '#if defined(HAVE_OPENSSL_AES_H) && defined(HAVE_AES_CFB128_ENCRYPT) && defined(HAVE_EVP_AES_128_CFB)'
+if ($h -match $aesPatternA) {
+    $h = [regex]::Replace($h, $aesPatternA, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $aesReplacementA })
+    $editCount++; Write-Ok "2.2 AES CFB128 conditional updated (upstream pattern)"
+} elseif ($h -match $aesPatternB) {
+    $h = [regex]::Replace($h, $aesPatternB, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $aesReplacementB })
+    $editCount++; Write-Ok "2.2 AES CFB128 conditional updated (inner pattern)"
 } elseif ($h.Contains('HAVE_EVP_AES_128_CFB')) {
     Write-Ok "2.2 AES conditional already updated (skip)"
 } else {
-    throw "2.2 Cannot find AES CFB128 #if block"
+    throw "2.2 Cannot find AES CFB128 #if block (tried upstream and inner patterns)"
 }
 
 # 2.3 __STDC_WANT_IEC_60559_EXT__ guard before FUNCS_EXT
